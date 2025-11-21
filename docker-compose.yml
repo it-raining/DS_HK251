@@ -1,0 +1,139 @@
+# version: '3.8'
+
+services:
+  # ---------------------------
+  # 1. Zookeeper (Quản lý Kafka)
+  # ---------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - smart-meter-net
+
+  # ---------------------------
+  # 2. Kafka Cluster (2 Brokers)
+  # ---------------------------
+  kafka1:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092" # Port để máy Windows của bạn kết nối vào nếu cần
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - smart-meter-net
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka2
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - smart-meter-net
+
+  # ---------------------------
+  # 3. HDFS (Storage Layer)
+  # ---------------------------
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    hostname: namenode
+    environment:
+      - CLUSTER_NAME=test
+      - HDFS_CONF_dfs_permissions_enabled=false # Tắt permission để dễ ghi/đọc
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    ports:
+      - "9870:9870" # Web UI của HDFS
+      - "8020:8020" # Port kết nối file system (Standard HDFS RPC)
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    networks:
+      - smart-meter-net
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    environment:
+      - HDFS_CONF_dfs_datanode_data_dir_perm=777
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    networks:
+      - smart-meter-net
+
+# ---------------------------
+  # 4. Spark (Processing Layer) - Official Apache Image
+  # ---------------------------
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
+    hostname: spark-master
+    # Lệnh khởi chạy Master node
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "8080:8080" # Web UI
+      - "7077:7077" # Port nhận job
+    networks:
+      - smart-meter-net
+    volumes:
+      - ./src:/app/src
+
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker
+    # Lệnh khởi chạy Worker node và kết nối tới Master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+    networks:
+      - smart-meter-net
+
+  # ---------------------------
+  # 5. Python Client (Generator & Streamlit)
+  # ---------------------------
+  client-app:
+    build: .
+    container_name: client-app
+    volumes:
+      - ./src:/app/src       # Mount code vào container
+      - ./data:/app/data     # Mount data vào container
+    ports:
+      - "8501:8501" # Port cho Streamlit Dashboard
+    depends_on:
+      - kafka1
+      - kafka2
+      - spark-master
+      - namenode
+    networks:
+      - smart-meter-net
+
+networks:
+  smart-meter-net:
+    driver: bridge
+
+volumes:
+  namenode_data:
+  datanode_data:
