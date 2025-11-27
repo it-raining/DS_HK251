@@ -81,9 +81,8 @@ def main():
     # Rule 1: Loại bỏ dữ liệu Null ở các trường quan trọng (Meter ID, Time)
     filtered_stream = cleaned_stream.filter(col("meter_id").isNotNull() & col("event_time").isNotNull())
     
-    # Rule 2: Chỉ lấy dữ liệu trạng thái Normal (code = 0) để Training cho chính xác
-    # (Hoặc bạn có thể giữ lại để phân tích lỗi, nhưng ở đây giả sử ta cần data sạch để train model dự đoán tiêu thụ)
-    filtered_stream = filtered_stream.filter(col("status_code") == 0)
+    # (có thể giữ lại để phân tích lỗi, nhưng ở đây giả sử ta cần data sạch để train model dự đoán tiêu thụ)
+    # filtered_stream = filtered_stream.filter(col("status_code") == 0)
 
     # Rule 3: Kiểm tra miền giá trị (Sanity Check)
     # Voltage phải > 0, Power >= 0

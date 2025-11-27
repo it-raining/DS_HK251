@@ -43,11 +43,13 @@ Chúng ta cần một tệp `docker-compose.yml` duy nhất để khởi tạo t
 - **Mạng (Network):** Tạo một mạng bridge tùy chỉnh (ví dụ: `smart-meter-net`) để các container có thể giao tiếp với nhau bằng tên (ví dụ: `spark-master` có thể nói chuyện với `kafka-broker-1`).
 - **Volumes:**
   - Ánh xạ một thư mục cục bộ `./data` vào container HDFS để lưu trữ dữ liệu lâu dài.
-  - Ánh xạ một thư mục cục bộ `./app` vào container Spark để bạn có thể chỉnh sửa các kịch bản Python trên máy và chạy chúng trong Docker ngay lập tức.
-
+  - Ánh xạ một thư mục cục bộ `./app` vào container Spark để bạn có thể chỉnh sửa các kịch bản Python trên máy và chạy chúng trong Docker ngay lập tức
+- Kết quả: 
+  - Đã connect được stream data flow: Kafka --> Spark --> HDFS
+  - Mount disk `namenode_data` và `datanode_data` vào container
+  - Trích xuất parquet lên visualizer
+  - 
 **Giai đoạn 2: Logic Pipeline (Phát triển)**
-
-Bạn đã xác định hai luồng xử lý riêng biệt trong kế hoạch của mình. Đây là cách triển khai chúng:
 
 **A. Trình tạo Dữ liệu giả (Python Script)**
 Thay vì dùng một tệp CSV tĩnh, hãy viết một kịch bản Python để:
@@ -55,10 +57,12 @@ Thay vì dùng một tệp CSV tĩnh, hãy viết một kịch bản Python đ�
 - Mô phỏng các "tick" dữ liệu trực tiếp.
 - Sử dụng thư viện `kafka-python` để đẩy các thông điệp JSON đến các Kafka Broker.
 
+**Kết quả 27/11: DONE**
+
 **B. Xử lý "Lakehouse" (Spark)**
 - **Job Huấn luyện (`train.py`):**
   - **Đầu vào:** CSV lịch sử.
-  - **Hành động:** Huấn luyện một mô hình Hồi quy Tuyến tính (Linear Regression) hoặc ARIMA.
+  - **Hành động:** Huấn luyện một mô hình Machine Learning (chưa xác định)
   - **Đầu ra:** Lưu mô hình vào `hdfs://namenode:8020/models/consumption_model`.
 - **Job Xử lý Luồng (`stream.py`):**
   - **Đầu vào:** Luồng Kafka (`readStream`).
@@ -75,15 +79,7 @@ Thay vì dùng một tệp CSV tĩnh, hãy viết một kịch bản Python đ�
   - **Tải nặng:** 1000 thông điệp/giây (sử dụng đa luồng cho trình tạo).
 ---
 
-### **1\. Bối cảnh & Vai trò Người Dùng 👷‍♂️**
-Hãy tưởng tượng bạn là một **người quản lý vận hành của một nhà máy điện**, chịu trách nhiệm **cung cấp năng lượng ổn định** cho cả **một khu vực**, có thể là một thành phố công nghiệp hoặc một tỉnh. Công việc của bạn là 
-
-- thu thập dữ liệu tiêu thụ điện  
-- viết báo cáo tổng hợp cho cấp trên  
-- điều chỉnh lượng điện cần sản xuất của nhà máy
----
-
-### **3\. Khung Đánh giá & Kiểm thử Hiệu năng ⚙️**
+### **3. Khung Đánh giá & Kiểm thử Hiệu năng ⚙️**
 
 Làm sao để chắc chắn hệ thống sẽ hoạt động tốt trong thực tế? Chúng ta sẽ thực hiện một quy trình kiểm thử hiệu năng gồm 3 bước:
 

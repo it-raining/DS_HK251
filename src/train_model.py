@@ -40,9 +40,8 @@ def main():
         return
 
     # 3. Chuẩn bị dữ liệu (Feature Engineering)
+    # Cần sửa lại logic model ở đây, hiện đang implement Model đơn giản: Dự đoán Công suất (Power) dựa trên Dòng điện (Current) và Điện áp (Voltage) 
     # Chọn các cột input (Features) và cột target (Label)
-    # Model đơn giản: Dự đoán Công suất (Power) dựa trên Dòng điện (Current) và Điện áp (Voltage)
-    # Mục đích: Để phát hiện bất thường (nếu Power thực tế lệch xa so với Power dự đoán -> Có vấn đề)
     feature_cols = ["voltage", "current", "power_factor", "frequency"]
     label_col = "power" # active_power_kw
 
