@@ -98,7 +98,7 @@ docker-compose exec -u 0 spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   --conf "spark.hadoop.fs.defaultFS=hdfs://namenode:8020" \
-  stream_predict.py
+  /app/src/stream_predict.py
 ```
 
 ## 5\. Hiển thị Dashboard (Visualization)

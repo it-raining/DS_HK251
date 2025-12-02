@@ -17,9 +17,11 @@ def main():
     # 1. Khởi tạo Spark Session (Batch Mode)
     spark = SparkSession.builder \
         .appName("SmartMeterTraining") \
+        .config("spark.cores.max", "1") \
+        .config("spark.executor.cores", "1") \
         .getOrCreate()
     
-    logger.info("🚀 Training Job Started...")
+    logger.info("Training Job Started...")
 
     # 2. Load dữ liệu từ HDFS (Parquet)
     try:
@@ -28,10 +30,10 @@ def main():
         
         # In ra số lượng bản ghi để kiểm tra
         record_count = df.count()
-        logger.info(f"📊 Found {record_count} records for training.")
+        logger.info(f"Found {record_count} records for training.")
         
         if record_count == 0:
-            logger.warning("⚠️ No data found! Please wait for ingest_data.py to run for a while.")
+            logger.warning("No data found! Please wait for ingest_data.py to run for a while.")
             return
             
     except Exception as e:
@@ -58,12 +60,12 @@ def main():
     pipeline = Pipeline(stages=[assembler, lr])
 
     # 5. Huấn luyện Model
-    logger.info("🏋️ Training model...")
+    logger.info("Training model...")
     model = pipeline.fit(train_data)
 
     # In ra các hệ số của model (Coefficients) để xem nó học được gì
     lr_model = model.stages[-1]
-    logger.info(f"✅ Model Trained! Coefficients: {lr_model.coefficients} Intercept: {lr_model.intercept}")
+    logger.info(f"Model Trained! Coefficients: {lr_model.coefficients} Intercept: {lr_model.intercept}")
 
     # 6. Lưu Model xuống HDFS
     # Cho phép ghi đè (overwrite) để cập nhật model mới nhất

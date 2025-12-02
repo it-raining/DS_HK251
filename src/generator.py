@@ -126,10 +126,21 @@ def main():
                 record = generate_reading(meter_id)
                 
                 # Gửi vào topic
-                producer.send(KAFKA_TOPIC, value=record)
+                future = producer.send(KAFKA_TOPIC, value=record)
+
+                # Callback khi gửi thành công
+                def on_send_success(metadata, r=record, m=meter_id):
+                    print(f"Sent {m} | P={r['measurements']['active_power_kw']}kW | Status={r['status']['message']}")
+                    print(f"Topic: {metadata.topic}, Partition: {metadata.partition}, Offset: {metadata.offset}")
+                
+                # Callback khi gửi thất bại
+                def on_send_error(exc, m=meter_id):
+                    print(f"Failed to send {m}: {exc}")
+                
+                future.add_callback(on_send_success)
+                future.add_errback(on_send_error)
                 
                 # In ra màn hình để debug (chỉ in 1 dòng cho gọn)
-                print(f"Sent {meter_id} | P={record['measurements']['active_power_kw']}kW | Status={record['status']['message']}")
             
             producer.flush()
             print(f"--- Batch sent. Sleeping {SLEEP_TIME}s ---")

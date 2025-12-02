@@ -18,6 +18,8 @@ def main():
     spark = SparkSession.builder \
         .appName("SmartMeterPrediction") \
         .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_PATH) \
+        .config("spark.cores.max", "1") \
+        .config("spark.executor.cores", "1") \
         .getOrCreate()
 
     logger.info("🚀 Prediction Job Started...")
