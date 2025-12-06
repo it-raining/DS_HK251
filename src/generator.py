@@ -6,6 +6,7 @@ import datetime
 import importlib
 from kafka import KafkaProducer
 import etcd3 
+import argparse # Configurable via command-line args
 
 # --- CẤU HÌNH KẾT NỐI ---
 ETCD_HOST = 'etcd'
@@ -117,18 +118,24 @@ def load_plugins_dynamic(plugin_names):
             
     return loaded_instances
 
-def init_meters():
-    """Khởi tạo trạng thái ban đầu cho các công tơ ảo"""
-    meter_id = f"MT_{DEVICE_ID}"
-    c_type = random.choice(["Residential", "Commercial", "Industrial"])
-    loc = random.choice(LOCATIONS)
+def init_meters(num_meters=NUM_METERS):
+    """Khởi tạo trạng thái ban đầu cho NHIỀU công tơ ảo"""
+    print(f"Initializing {num_meters} virtual meters on this node...")
     
-    meter_states[meter_id] = {
-        "type": c_type,
-        "location": loc,
-        "total_energy_kwh": random.uniform(1000.0, 50000.0)
-    }
-    print(f"Initialized meter: {meter_id} ({c_type})")
+    for i in range(num_meters):
+        # Nếu chạy nhiều hơn 1 meter, thêm hậu tố _01, _02 để phân biệt
+        suffix = f"_{i+1:02d}" if num_meters > 1 else ""
+        meter_id = f"MT_{DEVICE_ID}{suffix}"
+        
+        c_type = random.choice(["Residential", "Commercial", "Industrial"])
+        loc = random.choice(LOCATIONS)
+        
+        meter_states[meter_id] = {
+            "type": c_type,
+            "location": loc,
+            "total_energy_kwh": random.uniform(1000.0, 50000.0)
+        }
+        print(f"  + Created: {meter_id} ({c_type})")
 
 def generate_reading(meter_id, interval, enabled_metrics):
     """Sinh dữ liệu giả lập dựa trên profile và metrics được bật"""
@@ -195,7 +202,13 @@ def generate_reading(meter_id, interval, enabled_metrics):
 # --- MAIN LOOP ---
 
 def main():
-    print(f"Starting Generator [{DEVICE_ID}]...")
+    parser = argparse.ArgumentParser(description='Smart Meter Generator')
+    parser.add_argument('--count', type=int, default=1, help='Number of virtual meters per container')
+    args = parser.parse_args()
+    
+    NUM_METERS = args.count # Lấy số lượng từ lệnh chạy
+
+    print(f"Starting Generator [{DEVICE_ID}] with {NUM_METERS} meters...")
     
     # 1. Kết nối Etcd
     etcd_client = get_etcd_client()
@@ -214,7 +227,7 @@ def main():
             time.sleep(5)
 
     # 3. Khởi tạo công tơ
-    init_meters()
+    init_meters(NUM_METERS)
 
     # Biến quản lý trạng thái Plugins (để tránh reload liên tục)
     active_plugins = []

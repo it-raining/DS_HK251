@@ -152,3 +152,5 @@ docker-compose down -v
 docker-compose exec etcd etcdctl get /config
 
 docker-compose exec etcd etcdctl put /config "$(cat config.json)"
+
+docker system prune -a --volumes

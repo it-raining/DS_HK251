@@ -237,83 +237,216 @@ if st.sidebar.button("Lưu cấu hình", type="primary", use_container_width=Tru
         st.sidebar.error("Lỗi khi lưu")
 
 # Main Dashboard
-st.header("Smart Meter Real-time Monitor")
+# st.header("Smart Meter Real-time Monitor")
 
-refresh_interval = st.selectbox("Tốc độ refresh (giây)", [1, 5, 10, 30, 60], index=0)
+# refresh_interval = st.selectbox("Tốc độ refresh (giây)", [1, 5, 10, 30, 60], index=0)
 
-# Tạo placeholders cho nội dung động
-info_placeholder = st.empty()
-col_left, col_right = st.columns(2)
+# # Tạo placeholders cho nội dung động
+# info_placeholder = st.empty()
+# col_left, col_right = st.columns(2)
 
-left_header = col_left.empty()
-left_metrics = col_left.empty()
-left_chart = col_left.empty()
-left_expander = col_left.empty()
+# left_header = col_left.empty()
+# left_metrics = col_left.empty()
+# left_chart = col_left.empty()
+# left_expander = col_left.empty()
 
-right_header = col_right.empty()
-right_metrics = col_right.empty()
-right_chart = col_right.empty()
-right_expander = col_right.empty()
+# right_header = col_right.empty()
+# right_metrics = col_right.empty()
+# right_chart = col_right.empty()
+# right_expander = col_right.empty()
+
+# if client:
+#     while True:
+#         # Đọc data
+#         df_clean = read_parquet_from_hdfs_cached(HDFS_URL, HDFS_USER, CLEANED_PATH, limit_hours=1)
+#         df_pred = read_json_from_hdfs_cached(HDFS_URL, HDFS_USER, PREDICTION_PATH, limit_hours=1)
+        
+#         info_placeholder.info(f"Historical: {len(df_clean)} records | Predictions: {len(df_pred)} records")
+        
+#         # LEFT COLUMN
+#         left_header.subheader("Historical Data (HDFS)")
+        
+#         if not df_clean.empty:
+#             latest_time = df_clean['event_time'].max().strftime('%H:%M:%S')
+            
+#             with left_metrics.container():
+#                 m1, m2, m3 = st.columns(3)
+#                 m1.metric("Bản ghi", f"{len(df_clean)}")
+                
+#                 if 'power' in df_clean.columns:
+#                     m2.metric("Công suất TB", f"{df_clean['power'].mean():.2f} kW")
+                
+#                 m3.metric("Cập nhật", latest_time)
+
+#             chart_data = df_clean.head(100).sort_values('event_time')
+#             if 'power' in chart_data.columns:
+#                 left_chart.line_chart(chart_data.set_index('event_time')['power'], use_container_width=True)
+            
+#             with left_expander.expander("Xem chi tiết (20 records)"):
+#                 st.dataframe(df_clean.head(20), use_container_width=True)
+#         else:
+#             left_metrics.warning("Chưa có dữ liệu Historical")
+        
+#         # RIGHT COLUMN
+#         right_header.subheader("AI Predictions")
+        
+#         if not df_pred.empty:
+#             last_row = df_pred.iloc[0]
+            
+#             if 'actual_power' in last_row and 'predicted_power' in last_row:
+#                 error = abs(last_row['actual_power'] - last_row['predicted_power'])
+#                 error_pct = (error / last_row['actual_power'] * 100) if last_row['actual_power'] > 0 else 0
+                
+#                 with right_metrics.container():
+#                     p1, p2, p3 = st.columns(3)
+#                     p1.metric("Thực tế", f"{last_row['actual_power']:.2f} kW")
+#                     p2.metric("Dự báo", f"{last_row['predicted_power']:.2f} kW")
+#                     p3.metric("Sai số", f"{error_pct:.1f}%")
+
+#                 chart_data = df_pred.head(100).sort_values('event_time')
+#                 right_chart.line_chart(
+#                     chart_data.set_index('event_time')[['actual_power', 'predicted_power']], 
+#                     use_container_width=True
+#                 )
+            
+#             with right_expander.expander("Xem chi tiết (20 records)"):
+#                 st.dataframe(df_pred.head(20), use_container_width=True)
+#         else:
+#             right_metrics.info("Đang chờ dữ liệu Predictions")
+        
+#         time.sleep(refresh_interval)
+# else:
+#     st.error("Không thể kết nối tới HDFS")
+
+# --- MAIN DASHBOARD INTERFACE ---
+
+st.title("Smart Meter Lakehouse | Central Monitoring System")
+
+# Layout Container for smoother refreshing
+dashboard_placeholder = st.empty()
+
+# Sidebar: Operational Controls
+st.sidebar.markdown("---")
+st.sidebar.subheader("Dashboard Controls")
+refresh_interval = st.sidebar.selectbox("Refresh Rate", options=[1, 5, 10, 30], index=1, format_func=lambda x: f"{x} seconds")
 
 if client:
     while True:
-        # Đọc data
+        # 1. Ingest Data from HDFS (Data Lake)
         df_clean = read_parquet_from_hdfs_cached(HDFS_URL, HDFS_USER, CLEANED_PATH, limit_hours=1)
         df_pred = read_json_from_hdfs_cached(HDFS_URL, HDFS_USER, PREDICTION_PATH, limit_hours=1)
         
-        info_placeholder.info(f"Historical: {len(df_clean)} records | Predictions: {len(df_pred)} records")
-        
-        # LEFT COLUMN
-        left_header.subheader("Historical Data (HDFS)")
-        
-        if not df_clean.empty:
-            latest_time = df_clean['event_time'].max().strftime('%H:%M:%S')
+        with dashboard_placeholder.container(): # Clear previous frame
             
-            with left_metrics.container():
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Bản ghi", f"{len(df_clean)}")
-                
-                if 'power' in df_clean.columns:
-                    m2.metric("Công suất TB", f"{df_clean['power'].mean():.2f} kW")
-                
-                m3.metric("Cập nhật", latest_time)
+            # ==========================================
+            # LAYER 1: SYSTEM KPIs (High-level Metrics)
+            # ==========================================
+            st.markdown("### 1. Grid Overview")
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            
+            active_nodes = 0
+            avg_voltage = 0.0
+            total_load_kw = 0.0
+            grid_status = "OFFLINE"
 
-            chart_data = df_clean.head(100).sort_values('event_time')
-            if 'power' in chart_data.columns:
-                left_chart.line_chart(chart_data.set_index('event_time')['power'], use_container_width=True)
-            
-            with left_expander.expander("Xem chi tiết (20 records)"):
-                st.dataframe(df_clean.head(20), use_container_width=True)
-        else:
-            left_metrics.warning("Chưa có dữ liệu Historical")
-        
-        # RIGHT COLUMN
-        right_header.subheader("AI Predictions")
-        
-        if not df_pred.empty:
-            last_row = df_pred.iloc[0]
-            
-            if 'actual_power' in last_row and 'predicted_power' in last_row:
-                error = abs(last_row['actual_power'] - last_row['predicted_power'])
-                error_pct = (error / last_row['actual_power'] * 100) if last_row['actual_power'] > 0 else 0
+            if not df_clean.empty:
+                # Get the absolute latest snapshot for every unique meter
+                snapshot = df_clean.sort_values('event_time').groupby('meter_id').tail(1)
                 
-                with right_metrics.container():
-                    p1, p2, p3 = st.columns(3)
-                    p1.metric("Thực tế", f"{last_row['actual_power']:.2f} kW")
-                    p2.metric("Dự báo", f"{last_row['predicted_power']:.2f} kW")
-                    p3.metric("Sai số", f"{error_pct:.1f}%")
+                active_nodes = len(snapshot)
+                vg_voltage = snapshot['voltage'].mean() if 'voltage' in snapshot else 0
+                total_load_kw = snapshot['power'].sum() if 'power' in snapshot else 0
+                
+                # Simple logic for status: Nominal voltage is usually 220V +/- 10%
+                if 200 <= avg_voltage <= 240:
+                    grid_status = "NOMINAL"
+                else:
+                    grid_status = "UNSTABLE"
 
-                chart_data = df_pred.head(100).sort_values('event_time')
-                right_chart.line_chart(
-                    chart_data.set_index('event_time')[['actual_power', 'predicted_power']], 
-                    use_container_width=True
-                )
+            kpi1.metric("Active Nodes", f"{active_nodes}", delta="Connected")
+            kpi2.metric("Avg Grid Voltage", f"{avg_voltage:.1f} V", delta_color="normal" if grid_status == "NOMINAL" else "inverse")
+            kpi3.metric("Real-time Load", f"{total_load_kw:.2f} kW", help="Aggregated active power across all nodes")
+            kpi4.metric("Grid Status", grid_status)
+
+            st.markdown("---")
+
+            # ==========================================
+            # LAYER 2: TELEMETRY & CONSUMPTION (Per Spec)
+            # ==========================================
+
+            st.markdown("### 2. Telemetry Analysis")
             
-            with right_expander.expander("Xem chi tiết (20 records)"):
-                st.dataframe(df_pred.head(20), use_container_width=True)
-        else:
-            right_metrics.info("Đang chờ dữ liệu Predictions")
-        
+            if not df_clean.empty and 'meter_id' in df_clean.columns:
+                col_telemetry, col_consumption = st.columns(2)
+                
+                with col_telemetry:
+                    st.subheader("Voltage Stability Monitor")
+                    # Pivot data to show multi-series lines (one line per meter)
+                    # This allows detecting if a specific node is undervoltage
+                    df_voltage = df_clean.sort_values('event_time').tail(100)
+                    if 'voltage' in df_voltage.columns:
+                        pivot_volt = df_voltage.pivot_table(index='event_time', columns='meter_id', values='voltage', aggfunc='first')
+                        pivot_volt = pivot_volt.ffill().bfill()
+                        st.line_chart(pivot_volt, use_container_width=True, height=300)
+                    st.caption("Real-time voltage fluctuation per node (V).")
+
+                with col_consumption:
+                    st.subheader("Energy Consumption Distribution")
+                    # Aggregating total energy usage per meter
+                    if 'energy' in df_clean.columns:
+                        # Taking max() because energy is a cumulative counter in smart meters
+                        df_usage = df_clean.groupby('meter_id')['energy'].max().sort_values(ascending=False)
+                        st.bar_chart(df_usage, use_container_width=True, height=300)
+                    st.caption("Cumulative energy consumption per node (kWh).")
+
+            st.markdown("---")
+
+            # ==========================================
+            # LAYER 3: PREDICTIVE ANALYTICS (Spark ML)
+            # ==========================================
+            st.markdown("### 3. AI Inference (Spark Streaming)")
+            
+            col_pred_chart, col_raw_data = st.columns([2, 1])
+
+            with col_pred_chart:
+                st.subheader("Load Forecasting: Actual vs Predicted")
+                if not df_pred.empty:
+                    # Sort data
+                    df_vis = df_pred.sort_values('event_time').tail(60)
+                    last_row = df_vis.iloc[-1]
+                    
+                    act = last_row.get('actual_power', 0)
+                    pred = last_row.get('predicted_power', 0)
+                    err_val = abs(act - pred)
+                    err_pct = (err_val / act * 100) if act > 0 else 0
+                    
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Actual Load", f"{act:.2f} kW")
+                    m2.metric("Predicted", f"{pred:.2f} kW")
+                    m3.metric("Error Rate", f"{err_pct:.1f}%", delta=f"{err_val:.2f} kW", delta_color="inverse")
+                    
+                    st.line_chart(
+                        df_vis.set_index('event_time')[['actual_power', 'predicted_power']], 
+                        use_container_width=True,
+                        color=["#00CC96", "#EF553B"] 
+                    )
+                else:
+                    st.warning("Model is initializing... Waiting for Spark Streaming output.")
+
+            with col_raw_data:
+                st.subheader("Data Lake Logs")
+                if not df_clean.empty:
+                    display_cols = ['event_time', 'meter_id', 'voltage', 'power']
+                    valid_cols = [c for c in display_cols if c in df_clean.columns]
+                    st.dataframe(
+                        df_clean.sort_values('event_time', ascending=False)[valid_cols].head(10), 
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.write("No data in HDFS.")
+
         time.sleep(refresh_interval)
+
 else:
-    st.error("Không thể kết nối tới HDFS")
+    st.error(f"CRITICAL: Unable to connect to HDFS NameNode at {HDFS_URL}. Check Docker network.")
