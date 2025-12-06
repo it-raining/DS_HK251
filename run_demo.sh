@@ -36,6 +36,7 @@ case $option in
     1)
         echo -e "${BLUE}--- Đang khởi động Infrastructure ---${NC}"
         echo -e "Lệnh: docker-compose up -d --scale client-app=3"
+        sudo lsof -t -i:8080 -i:7077 -i:9092 -i:9870 -i:8020 -i:2379 -i:8081 | xargs sudo kill -9
         docker-compose up -d --scale client-app=3
         
         echo -e "${BLUE}--- Đang theo dõi log Kafka (Ctrl+C để thoát log) ---${NC}"
