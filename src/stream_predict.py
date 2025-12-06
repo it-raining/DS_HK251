@@ -22,14 +22,14 @@ def main():
         .config("spark.executor.cores", "1") \
         .getOrCreate()
 
-    logger.info("🚀 Prediction Job Started...")
+    logger.info("Prediction Job Started...")
 
     # 1. Load the trained model from HDFS
     try:
         model = PipelineModel.load(MODEL_PATH)
-        logger.info(f"✅ Model loaded successfully from {MODEL_PATH}")
+        logger.info(f"Model loaded successfully from {MODEL_PATH}")
     except Exception as e:
-        logger.error(f"❌ Failed to load model: {e}")
+        logger.error(f"Failed to load model: {e}")
         spark.stop()
         return
 

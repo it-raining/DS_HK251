@@ -71,9 +71,9 @@ def main():
     # Cho phép ghi đè (overwrite) để cập nhật model mới nhất
     try:
         model.write().overwrite().save(MODEL_OUTPUT_PATH)
-        logger.info(f"💾 Model saved successfully to: {MODEL_OUTPUT_PATH}")
+        logger.info(f"Model saved successfully to: {MODEL_OUTPUT_PATH}")
     except Exception as e:
-        logger.error(f"❌ Failed to save model: {e}")
+        logger.error(f"Failed to save model: {e}")
 
     spark.stop()
 

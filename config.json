@@ -1,0 +1,14 @@
+{
+   "interval": 2,
+   "enabled_metrics": [
+        "voltage_v",
+        "current_a",
+        "active_power_kw",
+        "power_factor",
+        "frequency_hz",
+        "total_energy_kwh"
+    ], 
+    "plugins": [
+      "plugins.overload_guard.OverloadGuardPlugin"
+    ]
+ }

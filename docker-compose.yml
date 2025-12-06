@@ -112,21 +112,50 @@ services:
       - smart-meter-net
 
   # ---------------------------
+  # 6. ETCD (Dynamic Config & Service Discovery)
+  # ---------------------------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.7
+    container_name: etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+    ports:
+      - "2379:2379" # Port giao tiếp client
+      - "2380:2380" # Port giao tiếp giữa các node etcd
+    networks:
+      - smart-meter-net
+
+  # (Optional) Giao diện Web để xem/sửa key-value dễ dàng
+  etcdkeeper:
+    image: evildecay/etcdkeeper
+    container_name: etcdkeeper
+    environment:
+      HOST: "0.0.0.0"
+    ports:
+      - "8081:8080" # Truy cập web UI qua localhost:8081
+    depends_on:
+      - etcd
+    networks:
+      - smart-meter-net
+  # ---------------------------
   # 5. Python Client (Generator & Streamlit)
   # ---------------------------
   client-app:
     build: .
-    container_name: client-app
+    # container_name: client-app
     volumes:
       - ./src:/app/src       # Mount code vào container
       - ./data:/app/data     # Mount data vào container
     ports:
-      - "8501:8501" # Port cho Streamlit Dashboard
+      - "8501-8503:8501" # Port cho Streamlit Dashboard
     depends_on:
       - kafka1
       - kafka2
       - spark-master
       - namenode
+      - etcd
     networks:
       - smart-meter-net
 

@@ -1,6 +1,6 @@
 import logging
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, expr, when
+from pyspark.sql.functions import from_json, col, to_date, coalesce, lit
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, TimestampType
 
 # --- CẤU HÌNH ---
@@ -13,11 +13,13 @@ CHECKPOINT_PATH = "hdfs://namenode:8020/checkpoints/ingest_job" # Bắt buộc c
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def main():
     # 1. Khởi tạo Spark Session
     spark = SparkSession.builder \
         .appName("SmartMeterIngestion") \
         .config("spark.sql.streaming.checkpointLocation", CHECKPOINT_PATH) \
+        .config("spark.sql.parquet.compression.codec", "snappy") \
         .config("spark.cores.max", "1") \
         .config("spark.executor.cores", "1") \
         .getOrCreate()
@@ -28,7 +30,7 @@ def main():
     # Cấu trúc lồng nhau (Nested Structure)
     json_schema = StructType([
         StructField("meter_id", StringType(), True),
-        StructField("timestamp", StringType(), True), # Nhận là String trước, cast sang Timestamp sau
+        StructField("timestamp", StringType(), True), 
         StructField("location", StructType([
             StructField("city", StringType(), True),
             StructField("district", StringType(), True),
@@ -55,6 +57,7 @@ def main():
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS) \
         .option("subscribe", KAFKA_TOPIC) \
         .option("startingOffsets", "earliest") \
+        .option("failOnDataLoss", "false") \
         .load()
 
     # 4. Parse JSON & Flatten (Làm phẳng dữ liệu)
@@ -66,9 +69,11 @@ def main():
     # 5. TIỀN XỬ LÝ (PRE-PROCESSING / CLEANING) 🧹
     cleaned_stream = parsed_stream \
         .withColumn("event_time", col("timestamp").cast(TimestampType())) \
+        .withColumn("date", to_date(col("event_time"))) \
         .select(
             col("meter_id"),
             col("event_time"),
+            col("date"), # Dùng để partition
             col("location.district"),
             col("measurements.voltage_v").alias("voltage"),
             col("measurements.current_a").alias("current"),
@@ -83,12 +88,13 @@ def main():
     # Rule 1: Loại bỏ dữ liệu Null ở các trường quan trọng (Meter ID, Time)
     filtered_stream = cleaned_stream.filter(col("meter_id").isNotNull() & col("event_time").isNotNull())
     
-    # (có thể giữ lại để phân tích lỗi, nhưng ở đây giả sử ta cần data sạch để train model dự đoán tiêu thụ)
-    # filtered_stream = filtered_stream.filter(col("status_code") == 0)
-
-    # Rule 3: Kiểm tra miền giá trị (Sanity Check)
-    # Voltage phải > 0, Power >= 0
-    filtered_stream = filtered_stream.filter((col("voltage") > 0) & (col("power") >= 0))
+    # Rule 2: Logic lọc giá trị rác
+    # Lưu ý: Generator có thể tắt metric (gửi null). 
+    # Dùng coalesce(col, 0) để coi như bằng 0 nếu null, tránh drop mất dòng data
+    filtered_stream = filtered_stream.filter(
+        (coalesce(col("voltage"), lit(1)) > 0) & 
+        (coalesce(col("power"), lit(0)) >= 0)
+    )
 
     # 6. Ghi xuống HDFS (WriteStream)
     # Định dạng Parquet: Tối ưu cho lưu trữ và truy vấn sau này
@@ -97,10 +103,12 @@ def main():
         .format("parquet") \
         .option("path", HDFS_PATH) \
         .option("checkpointLocation", CHECKPOINT_PATH) \
-        .trigger(processingTime="10 seconds") \
+        .partitionBy("date") \
+        .trigger(processingTime="1 minute") \
         .start()
 
     logger.info(f"Streaming to HDFS started. Path: {HDFS_PATH}")
+    logger.info(">>> Partitioning by 'date'. Trigger interval: 1 minute.")
     query.awaitTermination()
 
 if __name__ == "__main__":

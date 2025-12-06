@@ -1,7 +1,12 @@
 kafka-python
 pyspark
 streamlit
+streamlit-autorefresh
 pandas
 numpy
 scikit-learn
 hdfs
+etcd3
+protobuf==3.20.*
+pyarrow
+streamlit_autorefresh

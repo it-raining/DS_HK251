@@ -1,16 +1,36 @@
 import time
 import json
+import os
 import random
 import datetime
+import importlib
 from kafka import KafkaProducer
+import etcd3 
 
-# --- CẤU HÌNH ---
-KAFKA_BOOTSTRAP_SERVERS = ['kafka1:29092', 'kafka2:29092'] # Địa chỉ trong mạng Docker
-KAFKA_TOPIC = 'smart-meter-data'
-NUM_METERS = 10  # Số lượng công tơ giả lập
-SLEEP_TIME = 2   # Thời gian nghỉ giữa các lần gửi (giây)
+# --- CẤU HÌNH KẾT NỐI ---
+ETCD_HOST = 'etcd'
+ETCD_PORT = 2379
+KAFKA_BOOTSTRAP_SERVERS = ['kafka1:29092', 'kafka2:29092']
+KAFKA_METRIC_TOPIC = 'smart-meter-data'
+KAFKA_ALERT_TOPIC = 'plugins-data'
 
-# Định nghĩa các hồ sơ tiêu thụ điện (để dữ liệu trông thật hơn)
+# Key chứa toàn bộ cấu hình JSON trên etcd
+CONFIG_KEY = '/config'
+
+# Cấu hình mặc định (Fallback)
+DEFAULT_CONFIG = {
+    "interval": 2,
+    "enabled_metrics": [
+        "voltage_v", "current_a", "active_power_kw", 
+        "power_factor", "frequency_hz", "total_energy_kwh"
+    ],
+    "plugins": []
+}
+
+# --- THIẾT LẬP MÔ PHỎNG ---
+DEVICE_ID = os.getenv('HOSTNAME', 'unknown-meter')
+NUM_METERS = 1
+
 PROFILES = {
     "Residential": {"voltage_base": 220, "current_range": (0.5, 15.0), "p_factor_range": (0.85, 0.99)},
     "Commercial":  {"voltage_base": 220, "current_range": (10.0, 50.0), "p_factor_range": (0.80, 0.95)},
@@ -23,62 +43,139 @@ LOCATIONS = [
     {"city": "Ho Chi Minh City", "district": "Thu Duc", "base_gps": (10.8499, 106.7519)},
 ]
 
-# --- KHỞI TẠO TRẠNG THÁI CÔNG TƠ ---
-# Lưu trữ trạng thái tích lũy (kwh) để nó tăng dần theo thời gian
+# Biến toàn cục lưu trạng thái các công tơ
 meter_states = {}
 
-def init_meters():
-    for i in range(1, NUM_METERS + 1):
-        meter_id = f"MT_{1000 + i}"
-        c_type = random.choice(["Residential", "Commercial", "Industrial"])
-        loc = random.choice(LOCATIONS)
-        
-        meter_states[meter_id] = {
-            "type": c_type,
-            "location": loc,
-            "total_energy_kwh": random.uniform(1000.0, 50000.0), # Số điện ban đầu ngẫu nhiên
-            "status_code": 0
-        }
-    print(f"Đã khởi tạo {NUM_METERS} công tơ ảo.")
+# --- HELPER FUNCTIONS ---
+def on_send_success(record_metadata):
+    """Callback khi gửi thành công"""
+    print(f"✓ Sent to {record_metadata.topic} partition {record_metadata.partition} offset {record_metadata.offset}")
 
-# --- HÀM SINH DỮ LIỆU ---
-def generate_reading(meter_id):
+def on_send_error(excp):
+    """Callback khi gửi thất bại"""
+    print(f"✗ Failed to send message: {excp}")
+
+def get_etcd_client():
+    """Tạo kết nối an toàn tới etcd"""
+    try:
+        return etcd3.client(host=ETCD_HOST, port=ETCD_PORT)
+    except Exception as e:
+        print(f"Error creating etcd client: {e}")
+        return None
+
+def get_app_config(etcd_client):
+    """Lấy config tổng từ etcd. Nếu không có hoặc lỗi, trả về mặc định."""
+    if not etcd_client:
+        return DEFAULT_CONFIG
+
+    try:
+        value, _ = etcd_client.get(CONFIG_KEY)
+        if value:
+            # Parse JSON từ etcd
+            return json.loads(value.decode('utf-8'))
+        else:
+            # Nếu key chưa tồn tại, tạo mặc định lên etcd
+            print(f"Config key '{CONFIG_KEY}' not found. Uploading defaults...")
+            etcd_client.put(CONFIG_KEY, json.dumps(DEFAULT_CONFIG))
+            return DEFAULT_CONFIG
+    except Exception as e:
+        print(f"Error reading config from etcd: {e}")
+        return DEFAULT_CONFIG
+
+def load_plugins_dynamic(plugin_names):
+    """Import và khởi tạo danh sách plugin"""
+    loaded_instances = []
+    print(f"Loading plugins: {plugin_names}")
+    
+    for full_name in plugin_names:
+        try:
+            # Phân tách module và class (VD: plugins.guard.GuardPlugin)
+            if '.' not in full_name:
+                print(f"Invalid plugin format: {full_name}")
+                continue
+                
+            module_name, class_name = full_name.rsplit('.', 1)
+            
+            # Import module
+            mod = importlib.import_module(module_name)
+            # Lấy class
+            clazz = getattr(mod, class_name)
+            
+            # Khởi tạo instance
+            instance = clazz()
+            instance.initialize() # Gọi hàm initialize của plugin
+            
+            loaded_instances.append(instance)
+            print(f"Plugin loaded: {class_name}")
+            
+        except ImportError:
+            print(f"Plugin module not found: {full_name}")
+        except AttributeError:
+            print(f"Plugin class not found in module: {full_name}")
+        except Exception as e:
+            print(f"Error loading {full_name}: {e}")
+            
+    return loaded_instances
+
+def init_meters():
+    """Khởi tạo trạng thái ban đầu cho các công tơ ảo"""
+    meter_id = f"MT_{DEVICE_ID}"
+    c_type = random.choice(["Residential", "Commercial", "Industrial"])
+    loc = random.choice(LOCATIONS)
+    
+    meter_states[meter_id] = {
+        "type": c_type,
+        "location": loc,
+        "total_energy_kwh": random.uniform(1000.0, 50000.0)
+    }
+    print(f"Initialized meter: {meter_id} ({c_type})")
+
+def generate_reading(meter_id, interval, enabled_metrics):
+    """Sinh dữ liệu giả lập dựa trên profile và metrics được bật"""
     state = meter_states[meter_id]
     profile = PROFILES[state["type"]]
     
-    # 1. Sinh số liệu điện áp & dòng điện (có nhiễu ngẫu nhiên)
-    voltage = profile["voltage_base"] + random.uniform(-5.0, 5.0) # Dao động +/- 5V
+    # 1. Sinh số liệu ngẫu nhiên theo profile
+    voltage = profile["voltage_base"] + random.uniform(-5.0, 5.0)
     current = random.uniform(*profile["current_range"])
     power_factor = random.uniform(*profile["p_factor_range"])
     frequency = random.uniform(49.8, 50.2)
     
-    # 2. Tính công suất (kW) = (U * I * CosPhi) / 1000
-    # Nếu là công nghiệp 3 pha thì nhân thêm căn 3 (~1.73), ở đây làm đơn giản
+    # 2. Tính toán công suất
     multiplier = 1.73 if state["type"] == "Industrial" else 1.0
     active_power_kw = (voltage * current * power_factor * multiplier) / 1000
     
-    # 3. Tính điện năng tích lũy (Energy kWh)
-    # Giả sử hàm này chạy mỗi SLEEP_TIME giây -> cộng thêm lượng điện tiêu thụ trong thời gian đó
-    # kWh = kW * (giây / 3600)
-    energy_consumed = active_power_kw * (SLEEP_TIME / 3600.0)
+    # 3. Tính điện năng tiêu thụ trong khoảng thời gian interval
+    # P (kW) * t (hours) = kWh
+    energy_consumed = active_power_kw * (interval / 3600.0)
     state["total_energy_kwh"] += energy_consumed
 
-    # 4. Logic Status (98% là bình thường, 2% lỗi)
+    # 4. Logic mô phỏng sự cố (Status)
     rand_status = random.random()
     if rand_status > 0.99:
-        status_code = 1
-        status_msg = "Low Volt"
-        voltage = voltage * 0.8 # Giả lập sụt áp
+        status = {"code": 1, "message": "Low Voltage", "battery": 95}
+        voltage *= 0.8
     elif rand_status > 0.98:
-        status_code = 2
-        status_msg = "Overload"
-        current = current * 1.5 # Giả lập quá dòng
+        status = {"code": 2, "message": "Overload", "battery": 90}
+        current *= 1.5
     else:
-        status_code = 0
-        status_msg = "Normal"
+        status = {"code": 0, "message": "Normal", "battery": 100}
 
-    # 5. Format JSON theo mẫu yêu cầu
-    data = {
+    # 5. Tập hợp tất cả metrics có thể có
+    full_data = {
+        "voltage_v": round(voltage, 1),
+        "current_a": round(current, 2),
+        "active_power_kw": round(active_power_kw, 3),
+        "power_factor": round(power_factor, 2),
+        "frequency_hz": round(frequency, 2),
+        "total_energy_kwh": round(state["total_energy_kwh"], 2)
+    }
+    
+    # 6. Lọc chỉ lấy những metric được config
+    measurements = {k: v for k, v in full_data.items() if k in enabled_metrics}
+
+    # 7. Đóng gói JSON cuối cùng
+    record = {
         "meter_id": meter_id,
         "timestamp": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + "Z",
         "location": {
@@ -86,69 +183,103 @@ def generate_reading(meter_id):
             "district": state["location"]["district"],
             "gps": f"{state['location']['base_gps'][0]}, {state['location']['base_gps'][1]}"
         },
-        "measurements": {
-            "voltage_v": round(voltage, 1),
-            "current_a": round(current, 2),
-            "active_power_kw": round(active_power_kw, 3),
-            "power_factor": round(power_factor, 2),
-            "frequency_hz": round(frequency, 2),
-            "total_energy_kwh": round(state["total_energy_kwh"], 2)
-        },
+        "measurements": measurements,
         "status": {
-            "code": status_code,
-            "message": status_msg,
-            "battery_level": random.randint(80, 100)
+            "code": status["code"],
+            "message": status["message"],
+            "battery_level": status["battery"]
         }
     }
-    return data
+    return record
 
-# --- HÀM MAIN ---
+# --- MAIN LOOP ---
+
 def main():
-    # 1. Kết nối Kafka
-    print("Đang kết nối tới Kafka...")
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-            value_serializer=lambda x: json.dumps(x).encode('utf-8')
-        )
-        print("Đã kết nối Kafka thành công!")
-    except Exception as e:
-        print(f"Lỗi kết nối Kafka: {e}")
-        return
+    print(f"Starting Generator [{DEVICE_ID}]...")
+    
+    # 1. Kết nối Etcd
+    etcd_client = get_etcd_client()
+    
+    # 2. Kết nối Kafka
+    producer = None
+    while not producer:
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                value_serializer=lambda x: json.dumps(x).encode('utf-8')
+            )
+            print("Connected to Kafka")
+        except Exception as e:
+            print(f"Waiting for Kafka... ({e})")
+            time.sleep(5)
 
-    # 2. Khởi tạo công tơ
+    # 3. Khởi tạo công tơ
     init_meters()
 
-    # 3. Vòng lặp vô tận để gửi dữ liệu
+    # Biến quản lý trạng thái Plugins (để tránh reload liên tục)
+    active_plugins = []
+    current_plugin_names = []
+
     try:
         while True:
-            for meter_id in meter_states:
-                record = generate_reading(meter_id)
-                
-                # Gửi vào topic
-                future = producer.send(KAFKA_TOPIC, value=record)
+            # --- BƯỚC 1: ĐỌC CẤU HÌNH ---
+            config = get_app_config(etcd_client)
+            
+            # Lấy tham số (dùng default nếu config thiếu field)
+            interval = config.get("interval", DEFAULT_CONFIG["interval"])
+            enabled_metrics = config.get("enabled_metrics", DEFAULT_CONFIG["enabled_metrics"])
+            new_plugin_names = config.get("plugins", [])
 
-                # Callback khi gửi thành công
-                def on_send_success(metadata, r=record, m=meter_id):
-                    print(f"Sent {m} | P={r['measurements']['active_power_kw']}kW | Status={r['status']['message']}")
-                    print(f"Topic: {metadata.topic}, Partition: {metadata.partition}, Offset: {metadata.offset}")
+            # --- BƯỚC 2: QUẢN LÝ PLUGIN (RELOAD NẾU CẦN) ---
+            # So sánh danh sách tên plugin (Set comparison để không quan tâm thứ tự)
+            if set(new_plugin_names) != set(current_plugin_names):
+                print(f"Config changed. Reloading plugins...")
                 
-                # Callback khi gửi thất bại
-                def on_send_error(exc, m=meter_id):
-                    print(f"Failed to send {m}: {exc}")
+                # Dọn dẹp plugin cũ
+                for p in active_plugins:
+                    if hasattr(p, 'finalize'):
+                        try: p.finalize()
+                        except: pass
                 
+                # Load plugin mới
+                active_plugins = load_plugins_dynamic(new_plugin_names)
+                current_plugin_names = new_plugin_names
+
+            # --- BƯỚC 3: CHẠY PLUGIN ---
+            for plugin in active_plugins:
+                try:
+                    # Giả sử plugin có hàm run() trả về data hoặc None
+                    plugin_data = plugin.run()
+                    if plugin_data:
+                        # Gửi data từ plugin vào topic riêng
+                        producer.send(KAFKA_ALERT_TOPIC, value=plugin_data)
+                        print(f"Plugin Alert Sent: {plugin_data}")
+                except Exception as e:
+                    print(f"Plugin runtime error: {e}")
+
+            # --- BƯỚC 4: SINH DỮ LIỆU CÔNG TƠ ---
+            for meter_id in meter_states:
+                record = generate_reading(meter_id, interval, enabled_metrics)
+                
+                # Gửi Kafka
+                future = producer.send(KAFKA_METRIC_TOPIC, value=record)
                 future.add_callback(on_send_success)
                 future.add_errback(on_send_error)
-                
-                # In ra màn hình để debug (chỉ in 1 dòng cho gọn)
-            
+
+                metrics_count = len(record['measurements'])
+                print(f"[{meter_id}] Sent data ({metrics_count} metrics) | Status: {record['status']['message']}")
+
+            # Gửi thực sự
             producer.flush()
-            print(f"--- Batch sent. Sleeping {SLEEP_TIME}s ---")
-            time.sleep(SLEEP_TIME)
             
+            # Nghỉ theo interval cấu hình
+            time.sleep(interval)
+
     except KeyboardInterrupt:
-        print("Dừng generator.")
-    finally:
+        print("\nStopping Generator...")
+        # Dọn dẹp
+        for p in active_plugins:
+            if hasattr(p, 'finalize'): p.finalize()
         producer.close()
 
 if __name__ == "__main__":

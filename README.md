@@ -19,6 +19,8 @@ Bước đầu tiên là dựng cluster và cài đặt các thư viện phụ t
 ```bash
 # 1. Build image và khởi chạy các container dưới nền (detached mode)
 docker-compose up -d --build
+# --scale client-app=3 nghĩa là chạy 3 container cho service này
+docker-compose up -d --scale client-app=3
 
 # 2. [QUAN TRỌNG] Cài đặt numpy cho Spark Master và Worker
 # Spark MLlib cần numpy để tính toán ma trận, ta dùng -u 0 (user root) để có quyền cài đặt
@@ -35,6 +37,9 @@ Sau khi container chạy, cần tạo Topic để chứa dữ liệu từ Smart 
 # --partitions 1: Chia dữ liệu vào 1 phân vùng
 # --replication-factor 1: Chỉ lưu 1 bản sao (do chạy local cluster nhỏ)
 docker-compose exec kafka1 kafka-topics --create --topic smart-meter-data --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+# Tao topic plugin data de gui data tu plugin neu co
+docker-compose exec kafka1 kafka-topics --create --topic plugins-data --bootstrap-server kafka1:29092 --partitions 1 --replication-factor 1
 
 # (Tùy chọn) Kiểm tra xem topic đã được tạo thành công chưa
 docker-compose exec kafka1 kafka-topics --list --bootstrap-server localhost:9092
@@ -143,3 +148,7 @@ docker exec datanode cat /hadoop/dfs/data/current/VERSION
 # LƯU Ý: Lệnh này sẽ xóa sạch dữ liệu trong HDFS và Kafka
 docker-compose down -v
 ```
+
+docker-compose exec etcd etcdctl get /config
+
+docker-compose exec etcd etcdctl put /config "$(cat config.json)"
