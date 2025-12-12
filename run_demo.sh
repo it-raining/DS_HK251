@@ -28,16 +28,17 @@ echo -e "3. ${GREEN}[Spark Job]${NC}      Submit Spark Streaming (Xử lý dữ 
 echo -e "4. ${GREEN}[Dashboard]${NC}      Bật giao diện Streamlit"
 echo -e "5. ${RED}[Train Model]${NC}      Huấn luyện mô hình dự báo (Chạy trên Spark Master)"
 echo -e "6. ${RED}[Predict]${NC}           Dự báo tiêu thụ điện (Chạy trên Spark Master)"
-echo -e "7. ${RED}[Stop All]${NC}       Dừng và xóa toàn bộ hệ thống"
+echo -e "7. ${RED}[Large scale generator]${NC}     4 Cong to dien tren 1 container"
+echo -e "8. ${RED}[Stop All]${NC}       Dừng và xóa toàn bộ hệ thống"
 echo -e "0. Thoát"
 echo ""
-read -p "Chọn chức năng (0-7): " option
+read -p "Chọn chức năng (0-8): " option
 case $option in
     1)
         echo -e "${BLUE}--- Đang khởi động Infrastructure ---${NC}"
-        echo -e "Lệnh: docker-compose up -d --scale client-app=3"
+        echo -e "Lệnh: docker-compose up -d --scale client-app=5"
         sudo lsof -t -i:8080 -i:7077 -i:9092 -i:9870 -i:8020 -i:2379 -i:8081 | xargs sudo kill -9
-        docker-compose up -d --scale client-app=3
+        docker-compose up -d --scale client-app=5
         
         echo -e "${BLUE}--- Đang theo dõi log Kafka (Ctrl+C để thoát log) ---${NC}"
         docker-compose exec -u 0 spark-master pip install numpy
@@ -52,22 +53,31 @@ case $option in
         echo -e "${BLUE}--- Đang kích hoạt Generator trên các Container ---${NC}"
         
         # Lấy danh sách ID của tất cả container thuộc service 'client-app'
-        # docker-compose ps -q client-app trả về danh sách ID container
         CONTAINERS=$(docker-compose ps -q client-app)
 
         if [ -z "$CONTAINERS" ]; then
             echo -e "${RED}Lỗi: Chưa có container nào chạy. Hãy chạy bước 1 trước!${NC}"
         else
+            # Đếm số container và gán index
+            CONTAINER_INDEX=1
+            TOTAL_CONTAINERS=$(echo "$CONTAINERS" | wc -l)
+            
+            echo -e "${GREEN}Tìm thấy $TOTAL_CONTAINERS containers${NC}"
+            
             for container in $CONTAINERS; do
                 # Lấy tên container để hiển thị cho đẹp
                 NAME=$(docker inspect --format="{{.Name}}" $container | cut -c 2-)
                 
-                echo -e "${YELLOW}Kích hoạt generator trên: $NAME${NC}"
+                echo -e "${YELLOW}Kích hoạt generator trên: $NAME (Index: $CONTAINER_INDEX/$TOTAL_CONTAINERS)${NC}"
                 
-                # Exec vào container và chạy lệnh python ngầm (-d)
-                docker exec -d $container sh -c "python3 -u src/generator.py > /proc/1/fd/1 2>&1"
+                # Exec vào container với CONTAINER_INDEX đúng
+                docker exec -d $container sh -c "export CONTAINER_INDEX=$CONTAINER_INDEX && python3 -u src/generator.py --total-containers $TOTAL_CONTAINERS --mode normal > /proc/1/fd/1 2>&1"
+                
+                # Tăng index cho container tiếp theo
+                CONTAINER_INDEX=$((CONTAINER_INDEX + 1))
             done
-            echo -e "${GREEN} Đã kích hoạt xong trên tất cả node.${NC}"
+            
+            echo -e "${GREEN}✓ Đã kích hoạt xong trên tất cả $TOTAL_CONTAINERS containers.${NC}"
             echo -e "${BLUE}Tip: Dùng lệnh 'docker-compose logs -f client-app' để xem chúng gửi tin.${NC}"
         fi
         ;;
@@ -103,9 +113,41 @@ case $option in
         /app/src/stream_predict.py
         ;;
     7)
+        echo -e "${BLUE}--- Kích hoạt Large Scale Generator trên các Container ---${NC}"
+        
+        # Lấy danh sách ID của tất cả container thuộc service 'client-app'
+        CONTAINERS=$(docker-compose ps -q client-app)
+
+        if [ -z "$CONTAINERS" ]; then
+            echo -e "${RED}Lỗi: Chưa có container nào chạy. Hãy chạy bước 1 trước!${NC}"
+        else
+            # Đếm số container và gán index
+            CONTAINER_INDEX=1
+            TOTAL_CONTAINERS=$(echo "$CONTAINERS" | wc -l)
+            
+            echo -e "${GREEN}Tìm thấy $TOTAL_CONTAINERS containers${NC}"
+            
+            for container in $CONTAINERS; do
+                # Lấy tên container để hiển thị cho đẹp
+                NAME=$(docker inspect --format="{{.Name}}" $container | cut -c 2-)
+                
+                echo -e "${YELLOW}Kích hoạt large scale generator trên: $NAME (Index: $CONTAINER_INDEX/$TOTAL_CONTAINERS)${NC}"
+                
+                # Exec vào container với mode large-scale
+                docker exec -d $container sh -c "export CONTAINER_INDEX=$CONTAINER_INDEX && python3 -u src/generator.py --total-containers $TOTAL_CONTAINERS --mode large-scale > /proc/1/fd/1 2>&1"
+                
+                # Tăng index cho container tiếp theo
+                CONTAINER_INDEX=$((CONTAINER_INDEX + 1))
+            done
+            
+            echo -e "${GREEN}✓ Đã kích hoạt xong large scale generator trên tất cả $TOTAL_CONTAINERS containers.${NC}"
+            echo -e "${BLUE}Tip: Dùng lệnh 'docker-compose logs -f client-app' để xem chúng gửi tin.${NC}"
+        fi
+        ;;
+    8)
         echo -e "${RED}--- Đang dừng hệ thống ---${NC}"
         docker-compose down
-        echo -e "${GREEN}Thanh cong${NC}"
+        echo -e "${GREEN}Thành công${NC}"
         ;;
     0)
         echo "Goodd luckk =))."

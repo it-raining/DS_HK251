@@ -66,7 +66,7 @@ def main():
         from_json(col("value").cast("string"), json_schema).alias("data")
     ).select("data.*") # Bung các trường ra
 
-    # 5. TIỀN XỬ LÝ (PRE-PROCESSING / CLEANING) 🧹
+    # 5. TIỀN XỬ LÝ (PRE-PROCESSING / CLEANING) 
     cleaned_stream = parsed_stream \
         .withColumn("event_time", col("timestamp").cast(TimestampType())) \
         .withColumn("date", to_date(col("event_time"))) \

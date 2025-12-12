@@ -51,6 +51,7 @@ def main():
         .format("kafka") \
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS) \
         .option("subscribe", KAFKA_TOPIC) \
+        .option("failOnDataLoss", "false") \
         .load()
 
     # 4. Parse and select the features needed for the model

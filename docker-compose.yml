@@ -145,11 +145,14 @@ services:
   client-app:
     build: .
     # container_name: client-app
+    environment:
+      - CONTAINER_INDEX=${CONTAINER_INDEX:-0}
     volumes:
       - ./src:/app/src       # Mount code vào container
       - ./data:/app/data     # Mount data vào container
+      - ./smart_meters_linear_noise_5pct.csv:/app/data/smart_meters_linear_noise_5pct.csv
     ports:
-      - "8501-8503:8501" # Port cho Streamlit Dashboard
+      - "8501-8505:8501" # Port cho Streamlit Dashboard
     depends_on:
       - kafka1
       - kafka2
