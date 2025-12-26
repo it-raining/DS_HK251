@@ -354,7 +354,7 @@ if client:
                 snapshot = df_clean.sort_values('event_time').groupby('meter_id').tail(1)
                 
                 active_nodes = len(snapshot)
-                vg_voltage = snapshot['voltage'].mean() if 'voltage' in snapshot else 0
+                avg_voltage = snapshot['voltage'].mean() if 'voltage' in snapshot else 0
                 total_load_kw = snapshot['power'].sum() if 'power' in snapshot else 0
                 
                 # Simple logic for status: Nominal voltage is usually 220V +/- 10%

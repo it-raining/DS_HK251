@@ -202,7 +202,7 @@ def get_next_record(meter_id, enabled_metrics):
 # --- MAIN LOOP ---
 def main():
     parser = argparse.ArgumentParser(description='Smart Meter Generator (CSV Mode)')
-    parser.add_argument('--csv', type=str, default='/app/data/smart_meters_linear_noise_5pct.csv', 
+    parser.add_argument('--csv', type=str, default='/app/data/data.csv', 
                         help='Path to CSV file')
     parser.add_argument('--total-containers', type=int, default=5, 
                         help='Total number of containers (for meter distribution)')

@@ -12,7 +12,7 @@ Kế hoạch báo cáo distributed system course project
     - filtering, sampling, integration: Nhận data và xử lý data từ lớp trước. Đồng thời lưu dữ liệu vào lớp data stỏage  
     - predict data:  
       - Ở bước training Load model ML (sử dụng model đơn giản nhất, ít phức tạp nhất nhưng adaptive với hệ thống chung) lên để training   
-      - Ở bước inference: Dựa vào 3 ngày đầu tiên của 1 tháng, sau đó liên tục dự đoán tổng lượng điện có thể tiêu thụ trong tháng đó cho tới khi đủ số ngày trong tháng đó. Làm tiếp tục với tháng tiếp theo.  
+      - Ở bước inference: Dựa vào 3 ngày đầu tiên của 1 tháng, sau đó liên tục dự đoán tổng lượng điện có thể tiêu thụ trong tháng đó cho tới khi đủ số ngày trong tháng đó. Làm tiếp tục với tháng tiếp theo.    
   - Data storage: HDFS: Lưu trữ data streaming và model ML  
   - Visualization: vẽ biểu đồ số điện tiêu thụ trong 1 khoảng tg được lưu ở storage trong 1 tháng, 1 năm và 3 năm
 
